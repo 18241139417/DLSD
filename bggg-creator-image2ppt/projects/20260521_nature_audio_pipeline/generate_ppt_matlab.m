@@ -23,11 +23,10 @@ pxW = 1536; pxH = 1024;
 px2in = @(x,y,w,h) [x/pxW*slideW, y/pxH*slideH, w/pxW*slideW, h/pxH*slideH];
 
 % Background
-bg = Shape('Rectangle');
+bg = add(slide, 'Rectangle');
 bg.X = '0in'; bg.Y = '0in'; bg.Width = sprintf('%.3fin',slideW); bg.Height = sprintf('%.3fin',slideH);
 bg.FillColor = '#F3F4F6';
 bg.LineColor = '#F3F4F6';
-add(slide,bg);
 
 % Title
 p = px2in(60,24,1410,50);
@@ -38,10 +37,9 @@ add(slide,t);
 
 % Section 1
 p = px2in(20,90,1490,140);
-s1 = Shape('RoundRect');
+s1 = add(slide, 'RoundRect');
 s1.X=sprintf('%.3fin',p(1)); s1.Y=sprintf('%.3fin',p(2)); s1.Width=sprintf('%.3fin',p(3)); s1.Height=sprintf('%.3fin',p(4));
 s1.FillColor='#E5E7EB'; s1.LineColor='#9CA3AF';
-add(slide,s1);
 
 p = px2in(40,118,1450,90);
 t1 = TextBox('1  Raw bronze impact audio -> STFT/SVD denoising -> two-stage peak alignment -> normalized time-domain signal');
@@ -51,10 +49,9 @@ add(slide,t1);
 
 % Section 2A
 p = px2in(20,250,800,540);
-a = Shape('RoundRect');
+a = add(slide, 'RoundRect');
 a.X=sprintf('%.3fin',p(1)); a.Y=sprintf('%.3fin',p(2)); a.Width=sprintf('%.3fin',p(3)); a.Height=sprintf('%.3fin',p(4));
 a.FillColor='#EFF6FF'; a.LineColor='#3B82F6';
-add(slide,a);
 
 p = px2in(40,268,760,40);
 ta = TextBox('2A  MobileNetV2 primary scheme (deep learning)');
@@ -64,10 +61,9 @@ add(slide,ta);
 
 % Section 2B
 p = px2in(840,250,670,540);
-b = Shape('RoundRect');
+b = add(slide, 'RoundRect');
 b.X=sprintf('%.3fin',p(1)); b.Y=sprintf('%.3fin',p(2)); b.Width=sprintf('%.3fin',p(3)); b.Height=sprintf('%.3fin',p(4));
 b.FillColor='#ECFDF5'; b.LineColor='#22C55E';
-add(slide,b);
 
 p = px2in(860,268,630,40);
 tb = TextBox('2B  SVM + SHAP baseline scheme (traditional ML)');
@@ -77,10 +73,9 @@ add(slide,tb);
 
 % Section 3
 p = px2in(20,810,1490,190);
-c = Shape('RoundRect');
+c = add(slide, 'RoundRect');
 c.X=sprintf('%.3fin',p(1)); c.Y=sprintf('%.3fin',p(2)); c.Width=sprintf('%.3fin',p(3)); c.Height=sprintf('%.3fin',p(4));
 c.FillColor='#F5F3FF'; c.LineColor='#8B5CF6';
-add(slide,c);
 
 p = px2in(40,835,1450,120);
 t3 = TextBox('3  Model fusion, uncertainty band, and final mineralization output with XAI attribution report');
