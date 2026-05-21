@@ -1,8 +1,7 @@
-%% Auto image -> editable PPT (no single big pasted image)
-% 目标：不要整页大图；自动拆分组件图片 + OCR文本框（可编辑）
+%% Auto-decompose image -> editable PPT layers (text/image/arrows/lines)
+% 目标：将单张图拆成可编辑图层：文本框 + 图片组件 + 箭头/线条。
 % 输出：
-%   <name>_editable.pptx
-%   <name>_layers_auto/component_XXX.png
+%   <name>_fully_editable.pptx
 %   <name>_layers_auto/components.json
 
 [fn, fp] = uigetfile({'*.png;*.jpg;*.jpeg','Image Files (*.png,*.jpg,*.jpeg)'}, '选择要转换的图片');
@@ -18,43 +17,82 @@ G = rgb2gray(I);
 assetDir = fullfile(fp, [baseName '_layers_auto']);
 if ~exist(assetDir,'dir'), mkdir(assetDir); end
 
-%% 1) OCR 提取文本（转原生文本框）
+%% A) OCR -> 文本框（位置/颜色/字号近似保留）
 ocrRes = ocr(I);
 words = ocrRes.Words;
 wb = ocrRes.WordBoundingBoxes;
 conf = ocrRes.WordConfidences;
-valid = ~cellfun(@isempty,words) & conf>0.45;
+valid = ~cellfun(@isempty,words) & conf > 0.35;
 words = words(valid); wb = wb(valid,:);
 
-%% 2) 图像组件提取（排除文本区域）
+textItems = struct('text',{},'bbox',{},'rgb',{},'fontSize',{});
+for i=1:numel(words)
+    b = round(wb(i,:));
+    x1=max(1,b(1)); y1=max(1,b(2)); x2=min(W,b(1)+b(3)-1); y2=min(H,b(2)+b(4)-1);
+    patch = I(y1:y2,x1:x2,:);
+    med = squeeze(median(reshape(double(patch),[],3),1));
+    textItems(i).text = words{i};
+    textItems(i).bbox = [x1 y1 (x2-x1+1) (y2-y1+1)];
+    textItems(i).rgb = uint8(med');
+    textItems(i).fontSize = max(8, min(42, round((y2-y1+1)*0.65*72/96))); % px->pt 近似
+end
+
+%% B) 线条/箭头检测（Hough）
+E = edge(G,'Canny');
+[Hh,T,R] = hough(E);
+P  = houghpeaks(Hh, 80, 'Threshold', ceil(0.2*max(Hh(:))));
+L  = houghlines(E,T,R,P,'FillGap',18,'MinLength',24);
+lineItems = struct('p1',{},'p2',{},'width',{},'rgb',{});
+for i=1:numel(L)
+    p1 = L(i).point1; p2 = L(i).point2;
+    if norm(double(p1-p2)) < 20, continue; end
+    cx = round((p1(1)+p2(1))/2); cy = round((p1(2)+p2(2))/2);
+    x1=max(1,cx-2); x2=min(W,cx+2); y1=max(1,cy-2); y2=min(H,cy+2);
+    cpatch = I(y1:y2,x1:x2,:);
+    crgb = uint8(squeeze(median(reshape(double(cpatch),[],3),1))');
+    lineItems(end+1).p1 = p1; %#ok<AGROW>
+    lineItems(end).p2 = p2;
+    lineItems(end).width = 1.5;
+    lineItems(end).rgb = crgb;
+end
+
+%% C) 组件图像检测（排除文字和线条）
 BW = edge(G,'Canny');
 BW = imdilate(BW, strel('rectangle',[3 3]));
-BW = imclose(BW, strel('rectangle',[13 13]));
+BW = imclose(BW, strel('rectangle',[15 15]));
 BW = imfill(BW,'holes');
-BW = bwareaopen(BW, round(W*H*0.00025));
+BW = bwareaopen(BW, round(W*H*0.00035));
 
-% 把OCR文本区从图像组件mask中剔除
-textMask = false(H,W);
+maskText = false(H,W);
 for i=1:size(wb,1)
-    b = round(wb(i,:)); % x y w h
-    x1=max(1,b(1)); y1=max(1,b(2)); x2=min(W,b(1)+b(3)-1); y2=min(H,b(2)+b(4)-1);
-    textMask(y1:y2, x1:x2)=true;
+    b=round(wb(i,:)); x1=max(1,b(1)); y1=max(1,b(2)); x2=min(W,b(1)+b(3)-1); y2=min(H,b(2)+b(4)-1);
+    maskText(y1:y2,x1:x2)=true;
 end
-BW(textMask)=0;
+BW(maskText)=0;
+
+% 去除线条附近
+maskLine = false(H,W);
+for i=1:numel(lineItems)
+    p1=lineItems(i).p1; p2=lineItems(i).p2;
+    n=max(abs(p1-p2))+1;
+    xs=round(linspace(p1(1),p2(1),n)); ys=round(linspace(p1(2),p2(2),n));
+    idx=sub2ind([H,W], max(1,min(H,ys)), max(1,min(W,xs)));
+    maskLine(idx)=true;
+end
+maskLine = imdilate(maskLine, strel('disk',2));
+BW(maskLine)=0;
 
 CC = bwconncomp(BW);
 st = regionprops(CC,'BoundingBox');
 boxes=[];
 for i=1:numel(st)
-    bb = st(i).BoundingBox;
-    a = bb(3)*bb(4);
-    if a < W*H*0.0015 || a > W*H*0.85, continue; end
-    if bb(3)<20 || bb(4)<20, continue; end
+    bb=st(i).BoundingBox; a=bb(3)*bb(4);
+    if a < W*H*0.002 || a > W*H*0.90, continue; end
+    if bb(3)<24 || bb(4)<24, continue; end
     boxes(end+1,:)=bb; %#ok<AGROW>
 end
-boxes = mergeOverlaps(boxes,0.5);
+boxes=mergeOverlaps(boxes,0.5);
 
-%% 3) 导出组件PNG
 components = struct('name',{},'x',{},'y',{},'w',{},'h',{},'file',{});
 for i=1:size(boxes,1)
     b=boxes(i,:);
@@ -67,40 +105,56 @@ for i=1:size(boxes,1)
     components(i).x=x1; components(i).y=y1; components(i).w=x2-x1+1; components(i).h=y2-y1+1;
     components(i).file=fnc;
 end
-fid=fopen(fullfile(assetDir,'components.json'),'w'); fwrite(fid,jsonencode(components),'char'); fclose(fid);
 
-%% 4) 生成PPT（只放组件，不放整页大图）
+meta = struct('components',{components},'texts',{textItems},'lines',{lineItems});
+fid=fopen(fullfile(assetDir,'components.json'),'w'); fwrite(fid,jsonencode(meta),'char'); fclose(fid);
+
+%% D) 组装PPT（无整页底图）
 slideW_in=13.333; slideH_in=slideW_in*(H/W);
 SW=slideW_in*72; SH=slideH_in*72;
 px2pt=@(x,y,w,h)[x/W*SW, y/H*SH, w/W*SW, h/H*SH];
-outFile=fullfile(fp,[baseName '_editable.pptx']);
+ptX=@(x) x/W*SW; ptY=@(y) y/H*SH;
+outFile=fullfile(fp,[baseName '_fully_editable.pptx']);
 
 ppt=actxserver('PowerPoint.Application'); ppt.Visible=1;
 pres=ppt.Presentations.Add; pres.PageSetup.SlideWidth=SW; pres.PageSetup.SlideHeight=SH;
 slide=invoke(pres.Slides,'Add',1,12);
 
-% 组件独立图层
+% 图片组件层
 for i=1:numel(components)
     c=components(i); q=px2pt(c.x,c.y,c.w,c.h);
     shp=slide.Shapes.AddPicture(fullfile(assetDir,c.file),0,-1,q(1),q(2),q(3),q(4));
     shp.Name=c.name;
 end
 
-% OCR文本作为可编辑文本框
-for i=1:numel(words)
-    b=wb(i,:); q=px2pt(b(1),b(2),b(3),b(4));
-    t=slide.Shapes.AddTextbox(1,q(1),q(2),max(q(3),8),max(q(4),8));
-    tr=t.TextFrame.TextRange;
-    tr.Text=char(words{i});
-    tr.Font.Name='Arial'; tr.Font.Size=max(8,min(24,round(q(4)*0.55)));
-    tr.Font.Bold=0; tr.Font.Color.RGB=rgb2ppt([20 20 20]);
-    t.Name=sprintf('text_%03d',i);
+% 线条/箭头层（默认线，按长度阈值改箭头）
+for i=1:numel(lineItems)
+    li=lineItems(i);
+    ln = slide.Shapes.AddLine(ptX(li.p1(1)), ptY(li.p1(2)), ptX(li.p2(1)), ptY(li.p2(2)));
+    ln.Line.ForeColor.RGB = rgb2ppt(double(li.rgb));
+    ln.Line.Weight = li.width;
+    if norm(double(li.p1-li.p2)) > 40
+        ln.Line.EndArrowheadStyle = 3; % triangle
+    end
+    ln.Name = sprintf('line_%03d',i);
+end
+
+% 文本层
+for i=1:numel(textItems)
+    t=textItems(i); b=t.bbox; q=px2pt(b(1),b(2),b(3),b(4));
+    tx=slide.Shapes.AddTextbox(1,q(1),q(2),max(q(3),6),max(q(4),6));
+    tr=tx.TextFrame.TextRange;
+    tr.Text=char(t.text);
+    tr.Font.Name='Arial';
+    tr.Font.Size=t.fontSize;
+    tr.Font.Bold=0;
+    tr.Font.Color.RGB=rgb2ppt(double(t.rgb));
+    tx.Name=sprintf('text_%03d',i);
 end
 
 pres.SaveAs(outFile); pres.Close; ppt.Quit; delete(ppt);
-
 fprintf('已生成: %s\n', outFile);
-fprintf('组件图层: %d, OCR文本框: %d\n', numel(components), numel(words));
+fprintf('组件:%d 文本:%d 线条/箭头:%d\n', numel(components), numel(textItems), numel(lineItems));
 
 function c=rgb2ppt(rgb), c=rgb(1)+bitshift(rgb(2),8)+bitshift(rgb(3),16); end
 function boxesOut=mergeOverlaps(boxesIn,thr)
