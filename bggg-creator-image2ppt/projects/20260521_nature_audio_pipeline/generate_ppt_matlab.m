@@ -18,7 +18,7 @@ ppt.Visible = 1;
 pres = ppt.Presentations.Add;
 
 % ppLayoutBlank = 12
-slide = pres.Slides.Add(1, 12);
+slide = invoke(pres.Slides, 'Add', 1, 12);
 pres.PageSetup.SlideWidth = slideW;
 pres.PageSetup.SlideHeight = slideH;
 
