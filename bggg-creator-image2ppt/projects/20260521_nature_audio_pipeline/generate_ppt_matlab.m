@@ -1,62 +1,87 @@
-%% Interactive image -> layered editable PPT (MATLAB + PowerPoint COM)
-% 按最初指令：把元素拆成独立图层，便于编辑。
-% 流程：
-% 1) 选择 PNG/JPG 原图
-% 2) 选择若干 ROI 作为独立组件图层（双击完成每个框，回车结束）
-% 3) 每个 ROI 导出为透明度无损 PNG（矩形裁切），分别放入 PPT 独立图层
-% 4) 额外添加可编辑文本框（标题/注释）
+%% Auto image -> layered editable PPT (MATLAB + PowerPoint COM)
+% 自动识别并分离组件（无需手动框选）
+% 输出：
+% 1) <image>_editable_layers.pptx
+% 2) <image>_layers_auto/ 组件PNG
+% 3) <image>_layers_auto/components.json 组件坐标
 
 [fn, fp] = uigetfile({'*.png;*.jpg;*.jpeg','Image Files (*.png,*.jpg,*.jpeg)'}, '选择要转换的图片');
 if isequal(fn,0), error('未选择图片，已取消。'); end
 imgPath = fullfile(fp, fn);
 [~, baseName, ~] = fileparts(imgPath);
 
-img = imread(imgPath);
-info = imfinfo(imgPath);
-pxW = double(info.Width); pxH = double(info.Height);
+I = imread(imgPath);
+if size(I,3) == 1
+    Irgb = repmat(I,[1 1 3]);
+else
+    Irgb = I;
+end
+G = rgb2gray(Irgb);
+[pxH, pxW, ~] = size(Irgb);
 
-assetDir = fullfile(fp, [baseName '_layers']);
+assetDir = fullfile(fp, [baseName '_layers_auto']);
 if ~exist(assetDir,'dir'), mkdir(assetDir); end
 
-% 交互式框选组件
-h = figure('Name','框选要拆分的组件图层（回车结束）','NumberTitle','off');
-imshow(img); title('依次框选组件图层，完成双击；全部结束请按 Enter');
-rois = {};
-idx = 1;
-while true
-    r = drawrectangle('Color',[0 0.4470 0.7410]);
-    if isempty(r), break; end
-    pos = round(r.Position); % [x y w h]
-    if any(pos(3:4) <= 1)
-        delete(r);
-        break;
-    end
-    rois{idx} = pos; %#ok<AGROW>
-    idx = idx + 1;
-    waitforbuttonpress;
-    % Enter 结束；其他键继续
-    ch = get(h,'CurrentCharacter');
-    if double(ch) == 13
-        break;
-    end
-end
-close(h);
+%% ---- 自动组件检测 ----
+% 思路：边缘 + 形态学闭合 + 连通域筛选，提取模块级组件
+BW = edge(G, 'Canny');
+BW = imdilate(BW, strel('rectangle',[3 3]));
+BW = imclose(BW, strel('rectangle',[15 15]));
+BW = imfill(BW, 'holes');
+BW = bwareaopen(BW, round(pxW*pxH*0.00035));
 
-% 导出 ROI 组件
-layerFiles = {};
-for i = 1:numel(rois)
-    p = rois{i};
-    x1 = max(1,p(1)); y1 = max(1,p(2));
-    x2 = min(size(img,2), p(1)+p(3)-1);
-    y2 = min(size(img,1), p(2)+p(4)-1);
-    crop = img(y1:y2, x1:x2, :);
-    layerName = sprintf('layer_%02d.png', i);
-    layerPath = fullfile(assetDir, layerName);
-    imwrite(crop, layerPath);
-    layerFiles{i} = layerPath; %#ok<AGROW>
+CC = bwconncomp(BW);
+stats = regionprops(CC, 'BoundingBox', 'Area', 'Extent');
+
+boxes = [];
+minArea = pxW * pxH * 0.002;   % 过滤微小噪声
+maxArea = pxW * pxH * 0.92;    % 排除整页背景
+for k = 1:numel(stats)
+    bb = stats(k).BoundingBox; % [x y w h]
+    area = bb(3) * bb(4);
+    if area < minArea || area > maxArea
+        continue;
+    end
+    if bb(3) < 30 || bb(4) < 20
+        continue;
+    end
+    boxes(end+1,:) = bb; %#ok<AGROW>
 end
 
-% 幻灯片尺寸按原图比例
+% 若检测失败，退化为单组件（整图）
+if isempty(boxes)
+    boxes = [1 1 pxW pxH];
+end
+
+% 非极大合并：去重重叠框
+boxes = mergeOverlaps(boxes, 0.55);
+
+%% ---- 导出组件图 ----
+layerFiles = cell(size(boxes,1),1);
+components = struct('name',{},'x',{},'y',{},'w',{},'h',{},'file',{});
+for i = 1:size(boxes,1)
+    bb = boxes(i,:);
+    x1 = max(1, floor(bb(1)));
+    y1 = max(1, floor(bb(2)));
+    x2 = min(pxW, ceil(bb(1)+bb(3)-1));
+    y2 = min(pxH, ceil(bb(2)+bb(4)-1));
+
+    crop = Irgb(y1:y2, x1:x2, :);
+    fname = sprintf('component_%03d.png', i);
+    fpath = fullfile(assetDir, fname);
+    imwrite(crop, fpath);
+    layerFiles{i} = fpath;
+
+    components(i).name = sprintf('component_%03d', i);
+    components(i).x = x1; components(i).y = y1;
+    components(i).w = x2-x1+1; components(i).h = y2-y1+1;
+    components(i).file = fname;
+end
+
+jsonText = jsonencode(components);
+fid = fopen(fullfile(assetDir,'components.json'),'w'); fwrite(fid,jsonText,'char'); fclose(fid);
+
+%% ---- 生成PPT（独立图层）----
 slideW_in = 13.333;
 slideH_in = slideW_in * (pxH / pxW);
 slideW_pt = slideW_in * 72;
@@ -70,31 +95,32 @@ ppt.Visible = 1;
 pres = ppt.Presentations.Add;
 pres.PageSetup.SlideWidth = slideW_pt;
 pres.PageSetup.SlideHeight = slideH_pt;
-slide = invoke(pres.Slides, 'Add', 1, 12); % blank
+slide = invoke(pres.Slides, 'Add', 1, 12);
 
-% 底图作为参考层（可删）
+% 背景层（可删）
 bg = slide.Shapes.AddPicture(imgPath, 0, -1, 0, 0, slideW_pt, slideH_pt);
 bg.Name = 'reference_background';
+bg.ZOrder(1); % send backward
 
-% 逐个组件独立图层
-for i = 1:numel(rois)
-    p = rois{i};
-    q = px2pt(p(1), p(2), p(3), p(4));
-    shp = slide.Shapes.AddPicture(layerFiles{i}, 0, -1, q(1), q(2), q(3), q(4));
-    shp.Name = sprintf('component_%02d', i);
+% 自动组件层
+for i = 1:numel(components)
+    c = components(i);
+    q = px2pt(c.x, c.y, c.w, c.h);
+    shp = slide.Shapes.AddPicture(fullfile(assetDir,c.file), 0, -1, q(1), q(2), q(3), q(4));
+    shp.Name = c.name;
 end
 
-% 可编辑文本层
+% 可编辑文本层：自动标题和注释（可直接改）
 tb1 = slide.Shapes.AddTextbox(1, 0.03*slideW_pt, 0.02*slideH_pt, 0.94*slideW_pt, 0.06*slideH_pt);
 tr1 = tb1.TextFrame.TextRange;
-tr1.Text = 'Editable Title (Arial)';
+tr1.Text = 'Editable Title (Auto-layered)';
 tr1.Font.Name = 'Arial'; tr1.Font.Size = 18; tr1.Font.Bold = -1;
 tr1.Font.Color.RGB = rgb2ppt([17 24 39]);
 tb1.Name = 'text_title';
 
 tb2 = slide.Shapes.AddTextbox(1, 0.03*slideW_pt, 0.92*slideH_pt, 0.94*slideW_pt, 0.05*slideH_pt);
 tr2 = tb2.TextFrame.TextRange;
-tr2.Text = 'Editable Caption / Notes';
+tr2.Text = sprintf('Auto components: %d', numel(components));
 tr2.Font.Name = 'Arial'; tr2.Font.Size = 11; tr2.Font.Bold = 0;
 tr2.Font.Color.RGB = rgb2ppt([75 85 99]);
 tb2.Name = 'text_caption';
@@ -103,9 +129,47 @@ pres.SaveAs(outFile);
 pres.Close; ppt.Quit; delete(ppt);
 
 fprintf('已生成分层PPT: %s\n', outFile);
-fprintf('组件图层数量: %d\n', numel(rois));
+fprintf('自动识别组件数: %d\n', numel(components));
 fprintf('组件目录: %s\n', assetDir);
 
+%% ---------- helpers ----------
 function c = rgb2ppt(rgb)
 c = rgb(1) + bitshift(rgb(2),8) + bitshift(rgb(3),16);
+end
+
+function boxesOut = mergeOverlaps(boxesIn, iouThr)
+if isempty(boxesIn), boxesOut = boxesIn; return; end
+boxes = boxesIn;
+keep = true(size(boxes,1),1);
+for i = 1:size(boxes,1)
+    if ~keep(i), continue; end
+    bi = boxes(i,:);
+    for j = i+1:size(boxes,1)
+        if ~keep(j), continue; end
+        bj = boxes(j,:);
+        iou = calcIoU(bi,bj);
+        if iou > iouThr
+            % 保留面积更大的框
+            ai = bi(3)*bi(4); aj = bj(3)*bj(4);
+            if ai >= aj
+                keep(j) = false;
+            else
+                keep(i) = false;
+                break;
+            end
+        end
+    end
+end
+boxesOut = boxes(keep,:);
+end
+
+function v = calcIoU(a,b)
+ax1=a(1); ay1=a(2); ax2=a(1)+a(3); ay2=a(2)+a(4);
+bx1=b(1); by1=b(2); bx2=b(1)+b(3); by2=b(2)+b(4);
+ix1=max(ax1,bx1); iy1=max(ay1,by1);
+ix2=min(ax2,bx2); iy2=min(ay2,by2);
+iw=max(0,ix2-ix1); ih=max(0,iy2-iy1);
+inter=iw*ih;
+ua=a(3)*a(4)+b(3)*b(4)-inter;
+if ua<=0, v=0; else, v=inter/ua; end
 end
