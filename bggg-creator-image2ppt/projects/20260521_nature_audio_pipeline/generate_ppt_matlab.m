@@ -1,98 +1,70 @@
-%% Generate editable PPT (Windows + PowerPoint COM)
-% This version avoids mlreportgen API compatibility issues.
-% Requirement: Windows + Microsoft PowerPoint installed.
+%% Interactive image -> editable PPT (MATLAB + PowerPoint COM)
+% 功能：运行后选择 PNG/JPG 图片，自动生成同尺寸比例的可编辑 PPT。
+% 输出：与图片同目录同名 .pptx（并可编辑：背景图 + 文本框覆盖层）。
+% 依赖：Windows + Microsoft PowerPoint + MATLAB COM 支持。
 
-projectDir = fileparts(mfilename('fullpath'));
-outFile = fullfile(projectDir, 'output_matlab.pptx');
+[fn, fp] = uigetfile({'*.png;*.jpg;*.jpeg','Image Files (*.png,*.jpg,*.jpeg)'}, ...
+    '选择要转换的图片');
+if isequal(fn,0)
+    error('未选择图片，已取消。');
+end
+imgPath = fullfile(fp, fn);
+[~, baseName, ~] = fileparts(imgPath);
+outFile = fullfile(fp, [baseName '.pptx']);
 
-% Source canvas ratio
-pxW = 1536; pxH = 1024;
-slideW = 960;   % points (13.333in * 72)
-slideH = 640;   % points (8.889in * 72)
+imgInfo = imfinfo(imgPath);
+pxW = double(imgInfo.Width);
+pxH = double(imgInfo.Height);
 
-% Helper: px -> points
-px2pt = @(x,y,w,h) [x/pxW*slideW, y/pxH*slideH, w/pxW*slideW, h/pxH*slideH];
+% 设定输出宽度为 13.333in（Nature 常见 16:9 宽度基线），高度按原图比例自动计算
+slideW_in = 13.333;
+slideH_in = slideW_in * (pxH / pxW);
+slideW_pt = slideW_in * 72;
+slideH_pt = slideH_in * 72;
 
 ppt = actxserver('PowerPoint.Application');
 ppt.Visible = 1;
 pres = ppt.Presentations.Add;
+pres.PageSetup.SlideWidth = slideW_pt;
+pres.PageSetup.SlideHeight = slideH_pt;
 
 % ppLayoutBlank = 12
 slide = invoke(pres.Slides, 'Add', 1, 12);
-pres.PageSetup.SlideWidth = slideW;
-pres.PageSetup.SlideHeight = slideH;
 
-% msoTrue = -1
-msoTrue = -1;
+% 整图作为底图
+slide.Shapes.AddPicture(imgPath, 0, -1, 0, 0, slideW_pt, slideH_pt);
 
-% ---------- Background ----------
-p = px2pt(0,0,1536,1024);
-sh = slide.Shapes.AddShape(1, p(1), p(2), p(3), p(4)); % 1=Rectangle
-sh.Fill.ForeColor.RGB = rgb2ppt([243 244 246]);
-sh.Line.ForeColor.RGB = rgb2ppt([243 244 246]);
+% 添加可编辑标题文本框（用户可在PPT内修改）
+titleH = max(24, 0.065 * slideH_pt);
+titleBox = slide.Shapes.AddTextbox(1, 0.035*slideW_pt, 0.02*slideH_pt, 0.93*slideW_pt, titleH);
+tRange = titleBox.TextFrame.TextRange;
+tRange.Text = 'Editable Title (Arial)';
+tRange.Font.Name = 'Arial';
+tRange.Font.Size = max(14, round(titleH*0.45));
+tRange.Font.Bold = -1;
+tRange.Font.Color.RGB = rgb2ppt([20 24 28]);
 
-% ---------- Title ----------
-p = px2pt(60,24,1410,50);
-addText(slide, p, 'Audio preprocessing and dual-track modeling pipeline', 20, 'Arial', msoTrue, [17 24 39]);
-
-% ---------- Section 1 ----------
-p = px2pt(20,90,1490,140);
-sh = slide.Shapes.AddShape(5, p(1), p(2), p(3), p(4)); % 5=RoundRect
-sh.Fill.ForeColor.RGB = rgb2ppt([229 231 235]);
-sh.Line.ForeColor.RGB = rgb2ppt([156 163 175]);
-
-p = px2pt(40,118,1450,90);
-addText(slide, p, '1  Raw bronze impact audio -> STFT/SVD denoising -> two-stage peak alignment -> normalized time-domain signal', 16, 'Arial', 0, [31 41 55]);
-
-% ---------- Section 2A ----------
-p = px2pt(20,250,800,540);
-sh = slide.Shapes.AddShape(5, p(1), p(2), p(3), p(4));
-sh.Fill.ForeColor.RGB = rgb2ppt([239 246 255]);
-sh.Line.ForeColor.RGB = rgb2ppt([59 130 246]);
-
-p = px2pt(40,268,760,40);
-addText(slide, p, '2A  MobileNetV2 primary scheme (deep learning)', 17, 'Arial', msoTrue, [30 58 138]);
-
-% ---------- Section 2B ----------
-p = px2pt(840,250,670,540);
-sh = slide.Shapes.AddShape(5, p(1), p(2), p(3), p(4));
-sh.Fill.ForeColor.RGB = rgb2ppt([236 253 245]);
-sh.Line.ForeColor.RGB = rgb2ppt([34 197 94]);
-
-p = px2pt(860,268,630,40);
-addText(slide, p, '2B  SVM + SHAP baseline scheme (traditional ML)', 17, 'Arial', msoTrue, [22 101 52]);
-
-% ---------- Section 3 ----------
-p = px2pt(20,810,1490,190);
-sh = slide.Shapes.AddShape(5, p(1), p(2), p(3), p(4));
-sh.Fill.ForeColor.RGB = rgb2ppt([245 243 255]);
-sh.Line.ForeColor.RGB = rgb2ppt([139 92 246]);
-
-p = px2pt(40,835,1450,120);
-addText(slide, p, '3  Model fusion, uncertainty band, and final mineralization output with XAI attribution report', 16, 'Arial', 0, [49 46 129]);
-
-p = px2pt(40,970,1450,36);
-addText(slide, p, 'Font guideline: Nature-like sans serif (Arial/Helvetica), high-pixel journal export.', 10, 'Arial', 0, [75 85 99]);
+% 添加可编辑注释文本框（Nature风格参考）
+capH = max(22, 0.05 * slideH_pt);
+capY = slideH_pt - capH - 0.02*slideH_pt;
+capBox = slide.Shapes.AddTextbox(1, 0.035*slideW_pt, capY, 0.93*slideW_pt, capH);
+cRange = capBox.TextFrame.TextRange;
+cRange.Text = 'Caption / Notes (Arial, editable)';
+cRange.Font.Name = 'Arial';
+cRange.Font.Size = max(10, round(capH*0.38));
+cRange.Font.Bold = 0;
+cRange.Font.Color.RGB = rgb2ppt([55 65 81]);
 
 pres.SaveAs(outFile);
 pres.Close;
 ppt.Quit;
 delete(ppt);
 
-fprintf('Generated: %s\n', outFile);
-
-
-function addText(slide, p, txt, fontSize, fontName, boldFlag, rgb)
-box = slide.Shapes.AddTextbox(1, p(1), p(2), p(3), p(4)); % 1 = horizontal textbox
-tr = box.TextFrame.TextRange;
-tr.Text = txt;
-tr.Font.Name = fontName;
-tr.Font.Size = fontSize;
-tr.Font.Bold = boldFlag;
-tr.Font.Color.RGB = rgb2ppt(rgb);
-end
+fprintf('已生成PPT: %s\n', outFile);
+fprintf('图片尺寸: %.0f x %.0f px\n', pxW, pxH);
+fprintf('幻灯片尺寸: %.3f x %.3f in\n', slideW_in, slideH_in);
 
 function c = rgb2ppt(rgb)
-% Convert [R G B] to PowerPoint RGB integer (BGR byte order)
+% [R G B] -> PowerPoint RGB整数
 c = rgb(1) + bitshift(rgb(2),8) + bitshift(rgb(3),16);
 end
