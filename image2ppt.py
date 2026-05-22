@@ -55,9 +55,6 @@ def parse_args() -> argparse.Namespace:
 
     input_path = args.input_opt or args.input
     output_path = args.output_opt or args.output
-    if not input_path or not output_path:
-        parser.error("please provide input and output via positional args or --input/--output")
-
     args.input = input_path
     args.output = output_path
     return args
@@ -289,10 +286,52 @@ def build_ppt(layout: Dict[str, Any], output_path: Path) -> None:
     prs.save(str(output_path))
 
 
+
+def pick_input_file() -> Optional[Path]:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception:
+        return None
+
+    root = tk.Tk()
+    root.withdraw()
+    root.update()
+    filename = filedialog.askopenfilename(
+        title="选择要转换的图片/页面文件",
+        filetypes=[
+            ("Supported", "*.png *.jpg *.jpeg *.html *.htm *.svg"),
+            ("PNG", "*.png"),
+            ("JPEG", "*.jpg *.jpeg"),
+            ("HTML", "*.html *.htm"),
+            ("SVG", "*.svg"),
+            ("All Files", "*.*"),
+        ],
+    )
+    root.destroy()
+    if not filename:
+        return None
+    return Path(filename)
+
+
+def resolve_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    input_path = Path(args.input) if args.input else None
+
+    if input_path is None:
+        input_path = pick_input_file()
+        if input_path is None:
+            raise ValueError("未选择输入文件。请通过文件选择框选择，或使用 --input/位置参数传入。")
+
+    if args.output:
+        output_path = Path(args.output)
+    else:
+        output_path = input_path.with_suffix(".pptx")
+
+    return input_path, output_path
+
 def main() -> int:
     args = parse_args()
-    input_path = Path(args.input)
-    output_path = Path(args.output)
+    input_path, output_path = resolve_paths(args)
 
     if not input_path.exists():
         print(f"Input not found: {input_path}", file=sys.stderr)
