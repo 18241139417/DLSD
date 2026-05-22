@@ -43,13 +43,24 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert PNG/JPEG/HTML/SVG to editable PPTX without cloud API dependencies."
     )
-    parser.add_argument("--input", required=True, help="Input file path: png/jpeg/html/svg")
-    parser.add_argument("--output", required=True, help="Output .pptx file path")
+    parser.add_argument("input", nargs="?", help="Input file path: png/jpeg/html/svg")
+    parser.add_argument("output", nargs="?", help="Output .pptx file path")
+    parser.add_argument("--input", dest="input_opt", help="Input file path: png/jpeg/html/svg")
+    parser.add_argument("--output", dest="output_opt", help="Output .pptx file path")
     parser.add_argument(
         "--layout-json",
         help="Optional JSON file with explicit layout schema for high-fidelity editable reconstruction",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    input_path = args.input_opt or args.input
+    output_path = args.output_opt or args.output
+    if not input_path or not output_path:
+        parser.error("please provide input and output via positional args or --input/--output")
+
+    args.input = input_path
+    args.output = output_path
+    return args
 
 
 # ----------------------------- Input to PNG -----------------------------
