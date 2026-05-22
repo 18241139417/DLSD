@@ -1,0 +1,5 @@
+anthropic
+python-pptx
+playwright
+cairosvg
+Pillow
