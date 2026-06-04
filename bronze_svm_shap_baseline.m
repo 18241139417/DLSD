@@ -68,6 +68,8 @@ if maxStratifiedK < Outer_K
     warning('Outer_K=%d is too large for minority class count=%d; using K=%d.', Outer_K, minClassCount, maxStratifiedK);
 end
 foldId = makeStratifiedFolds(Y, maxStratifiedK, 2026);
+save('shared_fold_ids.mat', 'foldId', 'maxStratifiedK');
+fprintf('Fold IDs saved to shared_fold_ids.mat for cross-pipeline alignment.\n');
 numFolds = maxStratifiedK;
 
 % Storage

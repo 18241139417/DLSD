@@ -26,7 +26,7 @@ end
 % 参数
 method_version = "Acoustic_Feature_Extractor_Pro_vFinal_1.1.0";
 f_low = 20;
-f_high = 5000;
+f_high = 8000;
 cutoff = 10^(-3/20); % -3 dB 振幅比
 smooth_win_default = 15;
 nfft_factor = 4;
@@ -187,6 +187,7 @@ for i = 1:num_files
     % 保存有效样本数据
     k = k + 1;
     valid_data(k).Sample_Name        = string(file_name);
+    valid_data(k).Base_Name_Exact   = string(bName);
     valid_data(k).Base_Name          = string(bName);
     valid_data(k).Method_Version     = method_version;
     valid_data(k).Fs_Hz              = fs;
