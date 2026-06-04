@@ -30,10 +30,8 @@ end
 
 wavInfo = dir(fullfile(wavFolder, '*aligned.wav'));
 if isempty(wavInfo)
-    wavInfo = dir(fullfile(wavFolder, '*.wav'));
-end
-if isempty(wavInfo)
-    error('所选文件夹中未找到任何WAV文件。');
+    error(['所选文件夹中未找到 *aligned.wav 文件。\n' ...
+           '请确认选择的是 Blind_Dictionary_Denoise 的输出目录。']);
 end
 
 %% Step 3: 遍历WAV文件，提取并拼接特征
@@ -66,9 +64,14 @@ for i = 1:N
 
     % (c) CSV匹配对应样本（contains，不区分大小写）
     [~, baseName, ~] = fileparts(fname);
-    matchMask = contains(sampleNames, baseName, 'IgnoreCase', true) | ...
-                contains(baseName, sampleNames, 'IgnoreCase', true);
+    [~, sampleBaseNames] = cellfun(@(s) fileparts(char(s)), ...
+        cellstr(sampleNames), 'UniformOutput', false);
+    sampleBaseNames = string(sampleBaseNames);
+    matchMask = strcmp(sampleBaseNames, baseName);
     idx = find(matchMask, 1, 'first');
+    if isempty(idx)
+        warning('未在CSV中精确匹配到样本: %s。对应频域特征将保留NaN。', fname);
+    end
 
     if isempty(idx)
         warning('未在CSV中匹配到样本: %s。对应频域特征将保留NaN。', fname);
@@ -86,12 +89,7 @@ for i = 1:N
     X_raw(i, :) = featRow;
 
     % (e) 标签规则
-    lowerName = lower(fname);
-    if contains(lowerName, 'bad') || contains(lowerName, 'mineral')
-        Y(i) = categorical("Mineralized", ["Intact","Mineralized"]);
-    else
-        Y(i) = categorical("Intact", ["Intact","Mineralized"]);
-    end
+    Y(i) = categorical(get_bronze_label(fname), ["Intact","Mineralized"]);
 
     % Step 4(a): 数值保护与告警
     if any(~isfinite(featRow) | isnan(featRow))

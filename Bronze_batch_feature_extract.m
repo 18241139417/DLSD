@@ -25,8 +25,8 @@ pre_peak_sec  = 0.05;
 post_peak_sec = 1.0;
 win_len       = 1024;
 nfft          = 1024;
-noverlap      = win_len - 128;      % 87.5% overlap
-window_func   = blackmanharris(win_len, 'periodic');
+noverlap      = win_len - 256;      % hop length 256
+window_func   = blackmanharris(win_len, 'periodic'); % must match win_func_eff in Blind_Dictionary_Denoise.m
 db_range      = 75;
 freq_upper    = 8000;
 

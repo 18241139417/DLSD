@@ -56,12 +56,7 @@ for i = 1:numSamples
     spec = single(data.log_spec_matrix);
     XCell{i} = spec;
 
-    lowerName = lower(fileList(i).name);
-    if contains(lowerName, 'bad') || contains(lowerName, 'mineral')
-        YCell{i} = 'Mineralized';
-    else
-        YCell{i} = 'Intact';
-    end
+    YCell{i} = get_bronze_label(fileList(i).name);
 end
 
 H = size(XCell{1}, 1);
@@ -107,7 +102,18 @@ kOuter = min(Outer_K, numSamples);
 if kOuter < 2
     error('样本数量不足以进行交叉验证。');
 end
-outerCV = cvpartition(YLabels, 'KFold', kOuter);
+shared_fold_file = fullfile(pwd, 'shared_fold_ids.mat');
+if exist(shared_fold_file, 'file')
+    S_folds = load(shared_fold_file);
+    foldId_shared = S_folds.foldId;
+    kOuter = S_folds.maxStratifiedK;
+    fprintf('Loaded shared fold IDs from %s (K=%d).\n', ...
+        shared_fold_file, kOuter);
+else
+    error(['shared_fold_ids.mat not found. ' ...
+           'Run bronze_svm_shap_baseline.m first to generate fold IDs, ' ...
+           'then re-run this script.']);
+end
 
 results = struct();
 results.fold = repmat(struct(), kOuter, 1);
@@ -125,14 +131,15 @@ optimVars = [
 for fold = 1:kOuter
     fprintf('\n========== Outer Fold %d/%d ==========' , fold, kOuter); fprintf('\n');
 
-    idxTrain = training(outerCV, fold);
-    idxTest  = test(outerCV, fold);
+    idxTrain = (foldId_shared ~= fold);
+    idxTest  = (foldId_shared == fold);
 
     XOuterTrain = XData_MN(:,:,:,idxTrain);
     YOuterTrain = YLabels(idxTrain);
     XOuterTest  = XData_MN(:,:,:,idxTest);
     YOuterTest  = YLabels(idxTest);
 
+    rng(2026 + fold, 'twister');
     innerCV = cvpartition(YOuterTrain, 'HoldOut', innerHoldout);
     XInnerTrain = XOuterTrain(:,:,:,training(innerCV));
     YInnerTrain = YOuterTrain(training(innerCV));
@@ -245,23 +252,32 @@ if ~isempty(bestNet)
         sampleIdx = idxBestTest(1);
         originalSpec = XData(:,:,1,sampleIdx);
         inputImg = XData_MN(:,:,:,sampleIdx);
-        cam = gradCAM(bestNet, inputImg, 'Mineralized', ...
-            'FeatureLayer', 'out_relu', ...
-            'ReductionLayer', 'fc_output');
-
-        camResized = imresize(cam, [H, W]);
-        camNorm = camResized ./ max(camResized(:) + eps);
-        cmap = jet(256);
-        camRGB = ind2rgb(uint8(camNorm*255), cmap);
-        baseRGB = repmat(mat2gray(originalSpec), [1,1,3]);
-        alpha = 0.5;
-        overlay = (1-alpha)*baseRGB + alpha*camRGB;
-
-        figCAM = figure('Visible', 'off');
-        imagesc(overlay); axis image off;
-        title(sprintf('Grad-CAM Overlay (Fold %d)', bestFoldInfo.fold));
-        saveas(figCAM, fullfile(reportDir, 'GradCAM_BestFold.png'));
-        close(figCAM);
+        gradcam_layers = {'out_relu', 'block_13_expand_relu'};
+        for gl = 1:numel(gradcam_layers)
+            try
+                cam = gradCAM(bestNet, inputImg, 'Mineralized', ...
+                    'FeatureLayer', gradcam_layers{gl}, ...
+                    'ReductionLayer', 'fc_output');
+                camResized = imresize(cam, [H, W]);
+                camNorm = camResized ./ max(camResized(:) + eps);
+                cmap = jet(256);
+                camRGB = ind2rgb(uint8(camNorm*255), cmap);
+                baseRGB = repmat(mat2gray(originalSpec), [1,1,3]);
+                alpha = 0.5;
+                overlay = (1-alpha)*baseRGB + alpha*camRGB;
+                figCAM = figure('Visible', 'off');
+                imagesc(overlay); axis image off;
+                title(sprintf('Grad-CAM: %s (Fold %d)', ...
+                    gradcam_layers{gl}, bestFoldInfo.fold));
+                saveas(figCAM, fullfile(reportDir, ...
+                    sprintf('GradCAM_%s_BestFold.png', ...
+                    strrep(gradcam_layers{gl}, '_', ''))));
+                close(figCAM);
+            catch ME
+                warning('Grad-CAM failed for layer %s: %s', ...
+                    gradcam_layers{gl}, ME.message);
+            end
+        end
     end
 end
 

@@ -42,7 +42,7 @@ save_mat = true;
 % 2) 选择输入文件
 % ==========================
 disp('请选择多个 WAV 文件（可按住 Ctrl 或 Shift 多选）...');
-[fileList, pathName] = uigetfile('*.wav', '请选择WAV文件', 'MultiSelect', 'on');
+[fileList, pathName] = uigetfile('*aligned.wav', '请选择WAV文件', 'MultiSelect', 'on');
 
 if isequal(fileList, 0)
     disp('取消选择，程序结束。');
@@ -269,6 +269,12 @@ for i = 1:numFiles
         floor_p = max_p - db_range;
         log_spec_matrix = max(log_spec_raw, floor_p);
         log_spec_matrix = (log_spec_matrix - floor_p) / db_range; % [0,1]
+
+        expected_rows = nfft_eff / 2 + 1;
+        assert(size(log_spec_matrix, 1) == expected_rows, ...
+            ['Size mismatch: log_spec_matrix has %d rows but expected %d. ' ...
+             'Check nfft_eff consistency across pipeline.'], ...
+            size(log_spec_matrix, 1), expected_rows);
 
         if save_png
             output_png = fullfile(out_dir, [baseName, '_spectrogram.png']);
