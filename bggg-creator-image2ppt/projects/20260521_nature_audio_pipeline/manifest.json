@@ -1,0 +1,26 @@
+{
+  "deck": {
+    "name": "Nature-style Audio Mineralization Pipeline",
+    "canvas_width": 1536,
+    "canvas_height": 1024,
+    "slide_width_in": 13.333
+  },
+  "slides": [
+    {
+      "name": "Pipeline Overview",
+      "elements": [
+        {"kind": "background", "fill": "#f3f4f6"},
+        {"kind": "text", "name": "Figure title", "text": "Audio preprocessing and dual-track modeling pipeline", "x": 60, "y": 24, "w": 1410, "h": 50, "font_size_px": 26, "font_family": "Arial", "bold": true, "color": "#111827"},
+        {"kind": "shape", "shape": "roundRect", "x": 20, "y": 90, "w": 1490, "h": 140, "fill": "#e5e7eb", "stroke": "#9ca3af"},
+        {"kind": "text", "text": "1  Raw bronze impact audio → STFT/SVD denoising → two-stage peak alignment → normalized time-domain signal", "x": 40, "y": 118, "w": 1450, "h": 90, "font_size_px": 22, "font_family": "Arial", "color": "#1f2937"},
+        {"kind": "shape", "shape": "roundRect", "x": 20, "y": 250, "w": 800, "h": 540, "fill": "#eff6ff", "stroke": "#3b82f6"},
+        {"kind": "text", "text": "2A  MobileNetV2 primary scheme (deep learning)", "x": 40, "y": 268, "w": 760, "h": 40, "font_size_px": 24, "font_family": "Arial", "bold": true, "color": "#1e3a8a"},
+        {"kind": "shape", "shape": "roundRect", "x": 840, "y": 250, "w": 670, "h": 540, "fill": "#ecfdf5", "stroke": "#22c55e"},
+        {"kind": "text", "text": "2B  SVM + SHAP baseline scheme (traditional ML)", "x": 860, "y": 268, "w": 630, "h": 40, "font_size_px": 24, "font_family": "Arial", "bold": true, "color": "#166534"},
+        {"kind": "shape", "shape": "roundRect", "x": 20, "y": 810, "w": 1490, "h": 190, "fill": "#f5f3ff", "stroke": "#8b5cf6"},
+        {"kind": "text", "text": "3  Model fusion, uncertainty band, and final mineralization output with XAI attribution report", "x": 40, "y": 835, "w": 1450, "h": 120, "font_size_px": 24, "font_family": "Arial", "color": "#312e81"},
+        {"kind": "text", "text": "Font guideline: Nature-like sans serif (Arial/Helvetica), high pixel export for journal submission.", "x": 40, "y": 970, "w": 1450, "h": 36, "font_size_px": 16, "font_family": "Arial", "color": "#4b5563"}
+      ]
+    }
+  ]
+}
